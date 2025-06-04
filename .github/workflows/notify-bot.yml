@@ -72,7 +72,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${user_id}\", 
-              \"text\": \"✅ Спасибо, что прошли анкету! Ваш ответ был получен.\"
+              \"text\": \"✅ Спасибо, что прошли анкету! Ваши ответы приняты.\"
             }")
           
           echo "📡 User notification response: $RESPONSE"
@@ -86,45 +86,42 @@ jobs:
             echo "user_notified=false" >> $GITHUB_ENV
             echo "🔍 Error details: $RESPONSE"
           fi
-          
-      - name: Send admin notification
+
+      - name: Send admin info message
         run: |
-          echo "📤 Sending admin notification..."
-          echo "🔧 Admin ID: ${{ secrets.BOT_ADMIN_ID }}"
+          echo "📤 Sending admin info message..."
           
-          ADMIN_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          ADMIN_INFO_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.BOT_ADMIN_ID }}\", 
+              \"text\": \"📋 +1 человек прошел анкету!\\n👤 User ID: ${user_id}\"
+            }")
+          
+          echo "📡 Admin info response: $ADMIN_INFO_RESPONSE"
+          
+      - name: Send database update command
+        run: |
+          echo "📤 Sending database update command..."
+          
+          COMMAND_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.BOT_ADMIN_ID }}\", 
               \"text\": \"/form_completed ${user_id}\"
             }")
           
-          echo "📡 Admin notification response: $ADMIN_RESPONSE"
+          echo "📡 Command response: $COMMAND_RESPONSE"
           
-          # Проверяем успешность отправки админу
-          if echo "$ADMIN_RESPONSE" | jq -e '.ok == true' > /dev/null; then
-            echo "✅ Admin notification sent successfully!"
+          # Проверяем успешность отправки команды
+          if echo "$COMMAND_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "✅ Database update command sent successfully!"
             echo "admin_notified=true" >> $GITHUB_ENV
           else
-            echo "❌ Failed to send admin notification"
+            echo "❌ Failed to send database update command"
             echo "admin_notified=false" >> $GITHUB_ENV
-            echo "🔍 Error details: $ADMIN_RESPONSE"
+            echo "🔍 Error details: $COMMAND_RESPONSE"
           fi
-          
-      - name: Update database via bot command
-        if: env.user_notified == 'true' && env.admin_notified == 'true'
-        run: |
-          echo "💾 Triggering database update via bot..."
-          echo "📤 Sending database update command..."
-          
-          DB_UPDATE_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.BOT_ADMIN_ID }}\", 
-              \"text\": \"📋 Database update: User ${user_id} completed form\"
-            }")
-          
-          echo "📡 Database update response: $DB_UPDATE_RESPONSE"
           
       - name: Final status report
         run: |
