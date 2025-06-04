@@ -47,8 +47,7 @@ jobs:
           echo "🔧 Checking configuration..."
           echo "📊 Bot token configured: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}"
           echo "📊 Admin ID configured: ${{ secrets.BOT_ADMIN_ID != '' }}"
-          echo "🔧 Bot token length: ${#TELEGRAM_BOT_TOKEN}"
-          echo "🔧 Admin ID: ${{ secrets.BOT_ADMIN_ID }}"
+          echo "📊 Database URL configured: ${{ secrets.DATABASE_URL != '' }}"
           
           # Тестируем токен бота
           echo "🧪 Testing bot token..."
@@ -95,32 +94,64 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.BOT_ADMIN_ID }}\", 
-              \"text\": \"📋 +1 человек прошел анкету!\\n👤 User ID: ${user_id}\"
+              \"text\": \"📋 +1 человек прошел анкету!\\n👤 User ID: ${user_id}\\n✅ База данных обновлена автоматически\"
             }")
           
           echo "📡 Admin info response: $ADMIN_INFO_RESPONSE"
           
-      - name: Send database update command
-        run: |
-          echo "📤 Sending database update command..."
-          
-          COMMAND_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.BOT_ADMIN_ID }}\", 
-              \"text\": \"/form_completed ${user_id}\"
-            }")
-          
-          echo "📡 Command response: $COMMAND_RESPONSE"
-          
-          # Проверяем успешность отправки команды
-          if echo "$COMMAND_RESPONSE" | jq -e '.ok == true' > /dev/null; then
-            echo "✅ Database update command sent successfully!"
+          # Проверяем успешность отправки админу
+          if echo "$ADMIN_INFO_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "✅ Admin info sent successfully!"
             echo "admin_notified=true" >> $GITHUB_ENV
           else
-            echo "❌ Failed to send database update command"
+            echo "❌ Failed to send admin info"
             echo "admin_notified=false" >> $GITHUB_ENV
-            echo "🔍 Error details: $COMMAND_RESPONSE"
+            echo "🔍 Error details: $ADMIN_INFO_RESPONSE"
+          fi
+
+      - name: Install PostgreSQL client
+        run: |
+          echo "📦 Installing PostgreSQL client..."
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Update database directly
+        run: |
+          echo "💾 Updating database directly..."
+          echo "🔧 User ID: ${user_id}"
+          
+          # Обновляем статус complete_quest напрямую в PostgreSQL
+          PGPASSWORD="${{ secrets.DATABASE_PASSWORD }}" psql \
+            -h "${{ secrets.DATABASE_HOST }}" \
+            -U "${{ secrets.DATABASE_USER }}" \
+            -d "${{ secrets.DATABASE_NAME }}" \
+            -c "UPDATE users SET complete_quest = 'Заполнена' WHERE telegram_id = ${user_id};"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Database updated successfully! Set complete_quest = 'Заполнена' for user ${user_id}"
+            echo "database_updated=true" >> $GITHUB_ENV
+          else
+            echo "❌ Failed to update database"
+            echo "database_updated=false" >> $GITHUB_ENV
+          fi
+
+      - name: Verify database update
+        run: |
+          echo "🔍 Verifying database update..."
+          
+          # Проверяем что обновление прошло успешно
+          RESULT=$(PGPASSWORD="${{ secrets.DATABASE_PASSWORD }}" psql \
+            -h "${{ secrets.DATABASE_HOST }}" \
+            -U "${{ secrets.DATABASE_USER }}" \
+            -d "${{ secrets.DATABASE_NAME }}" \
+            -t -c "SELECT complete_quest FROM users WHERE telegram_id = ${user_id};")
+          
+          echo "📋 Current complete_quest status for user ${user_id}: $RESULT"
+          
+          if [[ "$RESULT" == *"Заполнена"* ]]; then
+            echo "✅ Database verification successful!"
+          else
+            echo "⚠️ Database verification failed or status not as expected"
           fi
           
       - name: Final status report
@@ -129,10 +160,11 @@ jobs:
           echo "👤 User ID: ${user_id}"
           echo "📤 User notified: ${user_notified:-false}"
           echo "👨‍💼 Admin notified: ${admin_notified:-false}"
+          echo "💾 Database updated: ${database_updated:-false}"
           
-          if [ "${user_notified:-false}" = "true" ] && [ "${admin_notified:-false}" = "true" ]; then
-            echo "🎉 All notifications sent successfully!"
+          if [ "${user_notified:-false}" = "true" ] && [ "${admin_notified:-false}" = "true" ] && [ "${database_updated:-false}" = "true" ]; then
+            echo "🎉 All operations completed successfully!"
           else
-            echo "⚠️ Some notifications failed - this is expected until secrets are fixed"
-            echo "ℹ️ Data was processed successfully, just need to fix GitHub Secrets"
+            echo "⚠️ Some operations failed"
+            exit 1
           fi 
