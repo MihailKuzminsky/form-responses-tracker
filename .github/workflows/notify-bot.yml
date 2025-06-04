@@ -119,10 +119,14 @@ jobs:
         run: |
           echo "💾 Updating database directly..."
           echo "🔧 User ID: ${user_id}"
+          echo "🔧 Database Host: ${{ secrets.DATABASE_HOST }}"
+          echo "🔧 Database User: ${{ secrets.DATABASE_USER }}"
+          echo "🔧 Database Name: ${{ secrets.DATABASE_NAME }}"
           
           # Обновляем статус complete_quest напрямую в PostgreSQL
           PGPASSWORD="${{ secrets.DATABASE_PASSWORD }}" psql \
             -h "${{ secrets.DATABASE_HOST }}" \
+            -p 6543 \
             -U "${{ secrets.DATABASE_USER }}" \
             -d "${{ secrets.DATABASE_NAME }}" \
             -c "UPDATE users SET complete_quest = 'Заполнена' WHERE telegram_id = ${user_id};"
@@ -142,6 +146,7 @@ jobs:
           # Проверяем что обновление прошло успешно
           RESULT=$(PGPASSWORD="${{ secrets.DATABASE_PASSWORD }}" psql \
             -h "${{ secrets.DATABASE_HOST }}" \
+            -p 6543 \
             -U "${{ secrets.DATABASE_USER }}" \
             -d "${{ secrets.DATABASE_NAME }}" \
             -t -c "SELECT complete_quest FROM users WHERE telegram_id = ${user_id};")
