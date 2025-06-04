@@ -1,0 +1,70 @@
+name: Notify Telegram Bot on Form Response
+
+on:
+  push:
+    paths:
+      - 'responses.json'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Parse new responses
+        id: parse
+        run: |
+          # Проверяем, что файл существует и не пустой
+          if [ ! -f "responses.json" ] || [ ! -s "responses.json" ]; then
+            echo "responses.json not found or empty"
+            exit 1
+          fi
+          
+          # Получаем user_id последнего ответа
+          NEW_USER_ID=$(jq -r '.[-1].user_id' responses.json)
+          
+          # Проверяем, что user_id получен корректно
+          if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ]; then
+            echo "Could not extract user_id from responses.json"
+            exit 1
+          fi
+          
+          echo "Found new response from user: $NEW_USER_ID"
+          echo "user_id=$NEW_USER_ID" >> $GITHUB_OUTPUT
+          
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          USER_ID: ${{ steps.parse.outputs.user_id }}
+        run: |
+          # Отправляем сообщение пользователю
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${USER_ID}\",
+              \"text\": \"✅ Спасибо, что прошли анкету! Ваши ответы приняты.\",
+              \"parse_mode\": \"HTML\"
+            }"
+          
+          echo "Notification sent to user: $USER_ID"
+          
+      - name: Update database via webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          USER_ID: ${{ steps.parse.outputs.user_id }}
+        run: |
+          # Отправляем webhook для обновления БД (если webhook настроен)
+          if [ ! -z "$WEBHOOK_URL" ]; then
+            curl -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"user_id\": \"${USER_ID}\", 
+                \"action\": \"form_completed\",
+                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+              }"
+            echo "Database webhook called for user: $USER_ID"
+          else
+            echo "No webhook URL configured, skipping database update"
+          fi 
