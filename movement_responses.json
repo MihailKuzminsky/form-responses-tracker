@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "user_id": "12345",
+    "timestamp": "2025-08-15T11:04:44.816Z",
+    "responses": {
+      "User ID": "12345",
+      "Username": "testuser",
+      "Referral": "67890",
+      "Имя": "Тест"
+    }
+  }
+]
