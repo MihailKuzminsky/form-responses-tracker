@@ -107,14 +107,7 @@ jobs:
         run: |
           echo "📤 Sending admin info message..."
           
-          ADMIN_MESSAGE="📋 +1 заявка на тариф «Истина»!
-
-👤 <b>Пользователь:</b> ${first_name}
-🆔 <b>ID:</b> ${user_id}
-📱 <b>Username:</b> @${username}
-🔗 <b>Реферал:</b> ${referral}
-
-✅ Форма заполнена и отправлена"
+          ADMIN_MESSAGE="📋 +1 заявка на тариф «Истина»! \n👤 <b>Пользователь:</b> ${first_name} \n🆔 <b>ID:</b> ${user_id} \n📱 <b>Username:</b> @${username} \n🔗 <b>Реферал:</b> ${referral}\n✅ Форма заполнена и отправлена"
           
           ADMIN_INFO_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
