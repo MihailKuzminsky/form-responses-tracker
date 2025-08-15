@@ -36,5 +36,15 @@
     "responses": {
       "User ID": "99999"
     }
+  },
+  {
+    "user_id": "99999",
+    "timestamp": "2025-08-15T11:45:00.091Z",
+    "responses": {
+      "User ID": "99999",
+      "Username": "testuser",
+      "Referral": "67890",
+      "Имя": "Тест создания"
+    }
   }
 ]
