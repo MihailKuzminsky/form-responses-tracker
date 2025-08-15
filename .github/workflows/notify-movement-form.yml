@@ -48,7 +48,7 @@ jobs:
           NEW_USER_ID=$(jq -r '.[-1].user_id' movement_responses.json)
           NEW_USERNAME=$(jq -r '.[-1].responses.username // "нет"' movement_responses.json)
           NEW_REFERRAL=$(jq -r '.[-1].responses.referral // "нет"' movement_responses.json)
-          NEW_FIRST_NAME=$(jq -r '.[-1].responses.Имя // "не указано"' movement_responses.json)
+          NEW_FIRST_NAME=$(jq -r '.[-1].responses."Имя" // "не указано"' movement_responses.json)
           
           if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ]; then
             echo "❌ Could not extract telegram_id from movement_responses.json"
