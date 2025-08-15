@@ -1,0 +1,161 @@
+name: Notify Truth Form Response
+
+on:
+  push:
+    paths:
+      - 'truth_responses.json'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Extract bot token from config.py
+        run: |
+          echo "🔍 Extracting BOT_TOKEN from config.py..."
+          BOT_TOKEN=$(python3 - <<'PY'
+import re
+try:
+    import sys
+    with open('config.py', encoding='utf-8') as f:
+        m = re.search(r"BOT_TOKEN\s*=\s*'([^']+)'", f.read())
+        print(m.group(1) if m else(''))
+except Exception as e:
+    print('')
+PY
+)
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "❌ Could not extract BOT_TOKEN from config.py"
+            exit 1
+          fi
+          echo "BOT_TOKEN=$BOT_TOKEN" >> $GITHUB_ENV
+          echo "✅ BOT_TOKEN extracted from config.py"
+        
+      - name: Parse truth form responses
+        id: parse
+        run: |
+          echo "🔍 Parsing truth_responses.json..."
+          
+          # Проверяем, что файл существует и не пустой
+          if [ ! -f "truth_responses.json" ] || [ ! -s "truth_responses.json" ]; then
+            echo "❌ truth_responses.json not found or empty"
+            exit 1
+          fi
+          
+          # Показываем содержимое файла для отладки
+          echo "📄 Current truth_responses.json content:"
+          cat truth_responses.json
+          
+          # Получаем данные последнего ответа
+          NEW_USER_ID=$(jq -r '.[-1].user_id' truth_responses.json)
+          NEW_USERNAME=$(jq -r '.[-1].responses.username // "нет"' truth_responses.json)
+          NEW_REFERRAL=$(jq -r '.[-1].responses.referral // "нет"' truth_responses.json)
+          NEW_FIRST_NAME=$(jq -r '.[-1].responses.Имя // "не указано"' truth_responses.json)
+          
+          # Проверяем, что telegram_id получен корректно
+          if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ]; then
+            echo "❌ Could not extract telegram_id from truth_responses.json"
+            echo "📋 Available data:"
+            jq '.' truth_responses.json
+            exit 1
+          fi
+          
+          echo "user_id=${NEW_USER_ID}" >> $GITHUB_ENV
+          echo "username=${NEW_USERNAME}" >> $GITHUB_ENV
+          echo "referral=${NEW_REFERRAL}" >> $GITHUB_ENV
+          echo "first_name=${NEW_FIRST_NAME}" >> $GITHUB_ENV
+          echo "✅ Found new truth form response from user: $NEW_USER_ID (@$NEW_USERNAME)"
+
+      - name: Check bot token
+        run: |
+          echo "🔧 Checking bot token..."
+          
+          # Тестируем токен бота
+          echo "🧪 Testing bot token..."
+          TEST_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/getMe")
+          echo "🧪 Bot test response: $TEST_RESPONSE"
+          
+          if echo "$TEST_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "✅ Bot token is valid!"
+            BOT_USERNAME=$(echo "$TEST_RESPONSE" | jq -r '.result.username')
+            echo "🤖 Bot username: @$BOT_USERNAME"
+          else
+            echo "❌ Bot token is invalid!"
+            exit 1
+          fi
+        
+      - name: Send thank you message to user
+        run: |
+          echo "📤 Sending thank you message to user ${user_id}..."
+          
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${user_id}\", 
+              \"text\": \"✅ Спасибо за заявку на тариф «Истина»!\\n\\nМы рассмотрим вашу заявку и свяжемся с вами в ближайшее время для прохождения отбора.\\n\\nЕсли у вас есть вопросы, пишите в поддержку.\"
+            }")
+          
+          echo "📡 User notification response: $RESPONSE"
+          
+          # Проверяем успешность отправки
+          if echo "$RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "✅ User notification sent successfully!"
+            echo "user_notified=true" >> $GITHUB_ENV
+          else
+            echo "❌ Failed to send user notification"
+            echo "user_notified=false" >> $GITHUB_ENV
+            echo "🔍 Error details: $RESPONSE"
+          fi
+
+      - name: Send admin info message
+        run: |
+          echo "📤 Sending admin info message..."
+          
+          # Формируем детальное сообщение для админа
+          ADMIN_MESSAGE="📋 +1 заявка на тариф «Истина»!
+
+👤 <b>Пользователь:</b> ${first_name}
+🆔 <b>ID:</b> ${user_id}
+📱 <b>Username:</b> @${username}
+🔗 <b>Реферал:</b> ${referral}
+
+✅ Форма заполнена и отправлена"
+          
+          ADMIN_INFO_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.BOT_ADMIN_ID }}\", 
+              \"text\": \"${ADMIN_MESSAGE}\",
+              \"parse_mode\": \"HTML\"
+            }")
+          
+          echo "📡 Admin info response: $ADMIN_INFO_RESPONSE"
+          
+          # Проверяем успешность отправки админу
+          if echo "$ADMIN_INFO_RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "✅ Admin info sent successfully!"
+            echo "admin_notified=true" >> $GITHUB_ENV
+          else
+            echo "❌ Failed to send admin info"
+            echo "admin_notified=false" >> $GITHUB_ENV
+            echo "🔍 Error details: $ADMIN_INFO_RESPONSE"
+          fi
+
+      - name: Final status report
+        run: |
+          echo "🎯 Final Status Report:"
+          echo "👤 User ID: ${user_id}"
+          echo "📱 Username: @${username}"
+          echo "🔗 Referral: ${referral}"
+          echo "📤 User notified: ${user_notified:-false}"
+          echo "👨‍💼 Admin notified: ${admin_notified:-false}"
+          
+          if [ "${user_notified:-false}" = "true" ] && [ "${admin_notified:-false}" = "true" ]; then
+            echo "🎉 All operations completed successfully!"
+          else
+            echo "⚠️ Some operations failed"
+            exit 1
+          fi
