@@ -49,7 +49,7 @@ jobs:
           NEW_USER_ID=$(jq -r '.[-1].user_id' truth_responses.json)
           NEW_USERNAME=$(jq -r '.[-1].responses.username // "нет"' truth_responses.json)
           NEW_REFERRAL=$(jq -r '.[-1].responses.referral // "нет"' truth_responses.json)
-          NEW_FIRST_NAME=$(jq -r '.[-1].responses.Имя // "не указано"' truth_responses.json)
+          NEW_FIRST_NAME=$(jq -r '.[-1].responses."Имя и фамилия" // "не указано"' truth_responses.json)
           
           if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ]; then
             echo "❌ Could not extract telegram_id from truth_responses.json"
@@ -64,33 +64,13 @@ jobs:
           echo "first_name=${NEW_FIRST_NAME}" >> $GITHUB_ENV
           echo "✅ Found new truth form response from user: $NEW_USER_ID (@$NEW_USERNAME)"
 
-      - name: Check secrets and test bot token
-        run: |
-          echo "🔧 Checking configuration..."
-          
-          echo "🧪 Testing bot token..."
-          TEST_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe")
-          echo "🧪 Bot test response: $TEST_RESPONSE"
-          
-          if echo "$TEST_RESPONSE" | jq -e '.ok == true' > /dev/null; then
-            echo "✅ Bot token is valid!"
-            BOT_USERNAME=$(echo "$TEST_RESPONSE" | jq -r '.result.username')
-            echo "🤖 Bot username: @$BOT_USERNAME"
-          else
-            echo "❌ Bot token is invalid!"
-            exit 1
-          fi
+
         
       - name: Send thank you message to user
         run: |
           echo "📤 Sending thank you message to user ${user_id}..."
           
-          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${user_id}\", 
-              \"text\": \"✅ Спасибо за заявку на тариф «Истина»!\\n\\nМы рассмотрим вашу заявку и свяжемся с вами в ближайшее время для прохождения отбора.\\n\\nЕсли у вас есть вопросы, пишите в поддержку.\"
-            }")
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" -H "Content-Type: application/json" -d "{\"chat_id\": \"${user_id}\", \"text\": \"✅ Спасибо за заявку на тариф «Истина»! Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время для прохождения отбора. Если у вас есть вопросы, пишите в поддержку.\"}")
           
           echo "📡 User notification response: $RESPONSE"
           
@@ -107,7 +87,14 @@ jobs:
         run: |
           echo "📤 Sending admin info message..."
           
-          ADMIN_MESSAGE="📋 +1 заявка на тариф «Истина»! \n👤 <b>Пользователь:</b> ${first_name} \n🆔 <b>ID:</b> ${user_id} \n📱 <b>Username:</b> @${username} \n🔗 <b>Реферал:</b> ${referral}\n✅ Форма заполнена и отправлена"
+          ADMIN_MESSAGE="📋 +1 заявка на тариф «Истина»!
+
+👤 <b>Пользователь:</b> ${first_name}
+🆔 <b>ID:</b> ${user_id}
+📱 <b>Username:</b> @${username}
+🔗 <b>Реферал:</b> ${referral}
+
+✅ Форма заполнена и отправлена"
           
           ADMIN_INFO_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
