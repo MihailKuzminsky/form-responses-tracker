@@ -11,7 +11,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         
       - name: Check secrets and test bot token
         run: |
@@ -42,15 +42,21 @@ jobs:
             exit 1
           fi
           
+          # Проверяем валидность JSON
+          if ! python3 -c "import json; json.load(open('movement_responses.json'))" 2>/dev/null; then
+            echo "❌ movement_responses.json is not valid JSON"
+            exit 1
+          fi
+          
           echo "📄 Current movement_responses.json content:"
           cat movement_responses.json
           
-          NEW_USER_ID=$(jq -r '.[-1].user_id' movement_responses.json)
-          NEW_USERNAME=$(jq -r '.[-1].responses.username // "нет"' movement_responses.json)
-          NEW_REFERRAL=$(jq -r '.[-1].responses.referral // "нет"' movement_responses.json)
-          NEW_FIRST_NAME=$(jq -r '.[-1].responses."Имя" // "не указано"' movement_responses.json)
+          NEW_USER_ID=$(jq -r '.[-1].user_id' movement_responses.json 2>/dev/null)
+          NEW_USERNAME=$(jq -r '.[-1].responses.username // "нет"' movement_responses.json 2>/dev/null)
+          NEW_REFERRAL=$(jq -r '.[-1].responses.referral // "нет"' movement_responses.json 2>/dev/null)
+          NEW_FIRST_NAME=$(jq -r '.[-1].responses."Имя" // "не указано"' movement_responses.json 2>/dev/null)
           
-          if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ]; then
+          if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ] || [ "$NEW_USER_ID" = "error" ]; then
             echo "❌ Could not extract telegram_id from movement_responses.json"
             echo "📋 Available data:"
             jq '.' movement_responses.json

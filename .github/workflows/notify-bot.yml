@@ -11,7 +11,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         
       - name: Parse new responses
         id: parse
@@ -24,15 +24,21 @@ jobs:
             exit 1
           fi
           
+          # Проверяем валидность JSON
+          if ! python3 -c "import json; json.load(open('responses.json'))" 2>/dev/null; then
+            echo "❌ responses.json is not valid JSON"
+            exit 1
+          fi
+          
           # Показываем содержимое файла для отладки
           echo "📄 Current responses.json content:"
           cat responses.json
           
           # Получаем user_id последнего ответа
-          NEW_USER_ID=$(jq -r '.[-1].user_id' responses.json)
+          NEW_USER_ID=$(jq -r '.[-1].user_id' responses.json 2>/dev/null)
           
           # Проверяем, что user_id получен корректно
-          if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ]; then
+          if [ "$NEW_USER_ID" = "null" ] || [ -z "$NEW_USER_ID" ] || [ "$NEW_USER_ID" = "error" ]; then
             echo "❌ Could not extract user_id from responses.json"
             echo "📋 Available data:"
             jq '.' responses.json
@@ -67,23 +73,51 @@ jobs:
         run: |
           echo "📤 Sending thank you message to user ${user_id}..."
           
-          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${user_id}\", 
-              \"text\": \"✅ Благодарю за заполнение анкеты, твои ответы приняты! Если ты оставил заявку на консультацию, Михаил с тобой свяжется.\"
-            }")
+          # Функция для отправки с retry
+          send_message_with_retry() {
+            local chat_id="$1"
+            local text="$2"
+            local max_retries=3
+            local retry_count=0
+            
+            while [ $retry_count -lt $max_retries ]; do
+              echo "🔄 Attempt $((retry_count + 1)) of $max_retries..."
+              
+              RESPONSE=$(curl -s -w "%{http_code}" -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"chat_id\": \"$chat_id\", 
+                  \"text\": \"$text\"
+                }")
+              
+              HTTP_CODE="${RESPONSE: -3}"
+              RESPONSE_BODY="${RESPONSE%???}"
+              
+              echo "📡 HTTP Code: $HTTP_CODE"
+              echo "📡 Response: $RESPONSE_BODY"
+              
+              if [ "$HTTP_CODE" = "200" ] && echo "$RESPONSE_BODY" | jq -e '.ok == true' > /dev/null 2>&1; then
+                echo "✅ Message sent successfully!"
+                return 0
+              else
+                echo "❌ Failed to send message (attempt $((retry_count + 1)))"
+                retry_count=$((retry_count + 1))
+                if [ $retry_count -lt $max_retries ]; then
+                  echo "⏳ Waiting 5 seconds before retry..."
+                  sleep 5
+                fi
+              fi
+            done
+            
+            echo "❌ All retry attempts failed"
+            return 1
+          }
           
-          echo "📡 User notification response: $RESPONSE"
-          
-          # Проверяем успешность отправки
-          if echo "$RESPONSE" | jq -e '.ok == true' > /dev/null; then
-            echo "✅ User notification sent successfully!"
+          # Отправляем сообщение пользователю
+          if send_message_with_retry "${user_id}" "✅ Благодарю за заполнение анкеты, твои ответы приняты! Если ты оставил заявку на консультацию, Михаил с тобой свяжется."; then
             echo "user_notified=true" >> $GITHUB_ENV
           else
-            echo "❌ Failed to send user notification"
             echo "user_notified=false" >> $GITHUB_ENV
-            echo "🔍 Error details: $RESPONSE"
           fi
 
       - name: Send admin info message
